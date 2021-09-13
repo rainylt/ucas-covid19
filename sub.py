@@ -16,23 +16,28 @@ from datetime import datetime
 from email.utils import formataddr
 from email.mime.text import MIMEText
 
+
 # 开启debug将会输出打卡填报的数据，关闭debug只会输出打卡成功或者失败，如果使用github actions，请务必设置该选项为False
 debug = False
 
 # 忽略网站的证书错误，这很不安全 :(
-verify_cert = False
+verify_cert = True
 
 # 全局变量，如果使用自己的服务器运行请根据需要修改 ->以下变量<-
 user = "USERNAME"  # sep 账号
 passwd = r"PASSWORD"  # sep 密码
-api_key = "API_KEY"  # 可选， server 酱的通知 api key
+api_key = ""  # 可选， server 酱的通知 api key
 
 # 可选，如果需要邮件通知，那么修改下面五行 :)
 smtp_port = "SMTP_PORT"
 smtp_server = "SMTP_SERVER"
-sender_email = "SENDER_EMAIL"
-sender_email_passwd = r"SENDER_EMAIL_PASSWD"
-receiver_email = "RECEIVER_EMAIL"
+sender_email = ""
+sender_email_passwd = r""
+receiver_email = ""
+
+# 可选，如果需要Telegram通知，修改下面
+tg_chat_id = ""  # 和bot的chat_id
+tg_bot_token = r""  # bot的token
 
 # 全局变量，使用自己的服务器运行请根据需要修改 ->以上变量<-
 
@@ -44,9 +49,12 @@ if os.environ.get('GITHUB_RUN_ID', None):
 
     smtp_port = os.environ.get('SMTP_PORT', '465')  # 邮件服务器端口，默认为qq smtp服务器端口
     smtp_server = os.environ.get('SMTP_SERVER', 'smtp.qq.com')  # 邮件服务器，默认为qq smtp服务器
-    sender_email = os.environ.get('SENDER_EMAIL', 'example@example.com')  # 发送通知打卡通知邮件的邮箱
-    sender_email_passwd = os.environ.get('SENDER_EMAIL_PASSWD', "password")  # 发送通知打卡通知邮件的邮箱密码
-    receiver_email = os.environ.get('RECEIVER_EMAIL', 'example@example.com')  # 接收打卡通知邮件的邮箱
+    sender_email = os.environ.get('SENDER_EMAIL', '')  # 发送通知打卡通知邮件的邮箱
+    sender_email_passwd = os.environ.get('SENDER_EMAIL_PASSWD', "")  # 发送通知打卡通知邮件的邮箱密码
+    receiver_email = os.environ.get('RECEIVER_EMAIL', '')  # 接收打卡通知邮件的邮箱
+
+    tg_chat_id = os.environ.get('TG_CHAT_ID', '')  # 和bot的chat_id
+    tg_bot_token = os.environ.get('TG_BOT_TOKEN', '')  # bot的token
 
 
 def login(s: requests.Session, username, password, cookie_file: Path):
@@ -73,7 +81,8 @@ def login(s: requests.Session, username, password, cookie_file: Path):
     # print(r.text)
     if r.json().get('m') != "操作成功":
         print("登录失败")
-        message(api_key, sender_email, sender_email_passwd, receiver_email, "健康打卡登录失败", "登录失败")
+        message(api_key, sender_email, sender_email_passwd, receiver_email,
+                tg_bot_token, tg_chat_id, "健康打卡登录失败", "登录失败")
 
     else:
         cookie_file.write_text(json.dumps(requests.utils.dict_from_cookiejar(r.cookies), indent=2), encoding='utf-8', )
@@ -97,45 +106,45 @@ def submit(s: requests.Session, old: dict):
         'realname': old['realname'],
         'number': old['number'],
         'szgj_api_info': old['szgj_api_info'],
-        'szgj': old['szgj'],
-        'old_sfzx': old['sfzx'],
+        # 'szgj': old['szgj'],# 2021.8.1 del
+        # 'old_sfzx': old['sfzx'],# 2021.8.1 del
         'sfzx': old['sfzx'],
         'szdd': old['szdd'],
         'ismoved': 0,  # 如果前一天位置变化这个值会为1，第二天仍然获取到昨天的1，而事实上位置是没变化的，所以置0
         # 'ismoved': old['ismoved'],
         'tw': old['tw'],
-        'bztcyy': old['bztcyy'],
+        # 'bztcyy': old['bztcyy'], # 2021.8.1 del
         # 'sftjwh': old['sfsfbh'],  # 2020.9.16 del
         # 'sftjhb': old['sftjhb'],  # 2020.9.16 del
         'sfcxtz': old['sfcxtz'],
-        'sfyyjc': old['sfyyjc'],
-        'jcjgqr': old['jcjgqr'],
+        # 'sfyyjc': old['sfyyjc'],# 2021.8.1 del
+        # 'jcjgqr': old['jcjgqr'],# 2021.8.1 del
         # 'sfjcwhry': old['sfjcwhry'],  # 2020.9.16 del
         # 'sfjchbry': old['sfjchbry'],  # 2020.9.16 del
-        'sfjcbh': old['sfjcbh'],
-        'jcbhlx': old['jcbhlx'],
-        'sfcyglq': old['sfcyglq'],
-        'gllx': old['gllx'],
+        'sfjcbh': old['sfjcbh'],  # 是否接触病患
+        # 'jcbhlx': old['jcbhlx'], # 2021.1.29 del 接触病患类型
+        'sfcyglq': old['sfcyglq'],  # 是否处于隔离期
+        # 'gllx': old['gllx'],   # 2021.1.29 del 隔离类型
         'sfcxzysx': old['sfcxzysx'],
-        'old_szdd': old['szdd'],
+        # 'old_szdd': old['szdd'],# 2021.8.1 del
         'geo_api_info': old['old_city'],  # 保持昨天的结果
         'old_city': old['old_city'],
         'geo_api_infot': old['geo_api_infot'],
         'date': datetime.now(tz=pytz.timezone("Asia/Shanghai")).strftime("%Y-%m-%d"),
-        'fjsj': old['fjsj'],  # 返京时间
-        'ljrq': old['ljrq'],  # 离京日期 add@2021.1.24
-        'qwhd': old['qwhd'],  # 去往何地 add@2021.1.24
-        'chdfj': old['chdfj'],  # 从何地返京 add@2021.1.24
-        'jcbhrq': old['jcbhrq'],
-        'glksrq': old['glksrq'],
-        'fxyy': old['fxyy'],
-        'jcjg': old['jcjg'],
-        'jcjgt': old['jcjgt'],
-        'qksm': old['qksm'],
-        'remark': old['remark'],
+        # 'fjsj': old['fjsj'],  # 返京时间# 2021.8.1 del
+        # 'ljrq': old['ljrq'],  # 离京日期 add@2021.1.24# 2021.8.1 del
+        # 'qwhd': old['qwhd'],  # 去往何地 add@2021.1.24# 2021.8.1 del
+        # 'chdfj': old['chdfj'],  # 从何地返京 add@2021.1.24# 2021.8.1 del
+        # 'jcbhrq': old['jcbhrq'], # del 2021.1.29 接触病患日期
+        # 'glksrq': old['glksrq'], # del 2021.1.29 隔离开始日期
+        # 'fxyy': old['fxyy'],# 2021.8.1 del
+        # 'jcjg': old['jcjg'],# 2021.8.1 del
+        # 'jcjgt': old['jcjgt'],# 2021.8.1 del
+        # 'qksm': old['qksm'],# 2021.8.1 del
+        # 'remark': old['remark'],
         'jcjgqk': old['jcjgqk'],
-        'jcwhryfs': old['jcwhryfs'],
-        'jchbryfs': old['jchbryfs'],
+        # 'jcwhryfs': old['jcwhryfs'],# 2021.8.1 del
+        # 'jchbryfs': old['jchbryfs'],# 2021.8.1 del
         'gtshcyjkzt': old['gtshcyjkzt'],  # add @2020.9.16
         'jrsfdgzgfxdq': old['jrsfdgzgfxdq'],  # add @2020.9.16
         'jrsflj': old['jrsflj'],  # add @2020.9.16
@@ -144,8 +153,8 @@ def submit(s: requests.Session, old: dict):
 
     check_data_msg = check_submit_data(new_daily)  # 检查上报结果
     if check_data_msg is not None:
-        message(api_key, sender_email, sender_email_passwd, receiver_email, "每日健康打卡-{}".format(check_data_msg),
-                "{}".format(new_daily))
+        message(api_key, sender_email, sender_email_passwd, receiver_email, tg_bot_token,
+                tg_chat_id, "每日健康打卡-{}".format(check_data_msg), "{}".format(new_daily))
         print("提交数据存在问题，请手动打卡，问题原因： {}".format(check_data_msg))
         return
 
@@ -162,7 +171,8 @@ def submit(s: requests.Session, old: dict):
     else:
         print("打卡失败，错误信息: ", r.json().get("m"))
 
-    message(api_key, sender_email, sender_email_passwd, receiver_email, result.get('m'), new_daily)
+    message(api_key, sender_email, sender_email_passwd, receiver_email,
+            tg_bot_token, tg_chat_id, result.get('m'), new_daily)
 
 
 def check_submit_data(data: dict):
@@ -178,10 +188,13 @@ def check_submit_data(data: dict):
     if int(data['tw']) > 4:
         msg.append("体温大于 37.3 度 ，请手动填报")
 
+    if data['jrsflj'] == '是':
+        msg.append("近日有离京经历，请手动填报")
+
     return ";".join(msg) if msg else None
 
 
-def message(key, sender, mail_passwd, receiver, subject, msg):
+def message(key, sender, mail_passwd, receiver, bot_token, chat_id, subject, msg):
     """
     再封装一下 :) 减少调用通知写的代码
     """
@@ -189,6 +202,8 @@ def message(key, sender, mail_passwd, receiver, subject, msg):
         server_chan_message(key, subject, msg)
     if sender_email != "" and receiver_email != "":
         send_email(sender, mail_passwd, receiver, subject, msg)
+    if tg_bot_token != "" and tg_chat_id != "":
+        send_telegram_message(bot_token, chat_id, "{}\n{}".format(subject, msg))
 
 
 def server_chan_message(key, title, body):
@@ -196,7 +211,7 @@ def server_chan_message(key, title, body):
     微信通知打卡结果
     """
     # 错误的key也可以发送消息，无需处理 :)
-    msg_url = "https://sc.ftqq.com/{}.send?text={}&desp={}".format(key, title, body)
+    msg_url = "https://sctapi.ftqq.com/{}.send?text={}&desp={}".format(key, title, body)
     requests.get(msg_url)
 
 
@@ -223,6 +238,18 @@ def send_email(sender, mail_passwd, receiver, subject, msg):
         print("邮件发送失败")
         if debug:
             print(ex)
+
+
+def send_telegram_message(bot_token, chat_id, msg):
+    """
+    Telegram通知打卡结果
+    python-telegram-bot 只支持 python 3.6或更高的版本
+    此处使用时再导入以保证向后兼容 python 3.5；
+    如果要使用 tg 消息通知，请使用 python 3.6或更高的版本
+    """
+    import telegram 
+    bot = telegram.Bot(token=bot_token)
+    bot.send_message(chat_id=chat_id, text=msg)
 
 
 def report(username, password):
